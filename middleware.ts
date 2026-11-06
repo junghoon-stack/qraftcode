@@ -1,20 +1,12 @@
 import { NextResponse } from "next/server";
 
-export async function middleware(request: Request) {
-  const { pathname } = new URL(request.url);
-
-  if (pathname.startsWith("/api/")) {
-    const headers = new Headers(request.headers);
-    headers.set("x-frame-options", "DENY");
-    headers.set("x-content-type-options", "nosniff");
-    headers.set("referrer-policy", "strict-origin-when-cross-origin");
-
-    return NextResponse.next({ request: { headers } });
-  }
-
-  return NextResponse.next();
+export function middleware() {
+  const response = NextResponse.next();
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  return response;
 }
 
-export const config = {
-  matcher: ["/api/:path*"],
-};
+export const config = { matcher: ["/api/:path*", "/((?!_next/static|_next/image|favicon.ico).*)"] };
