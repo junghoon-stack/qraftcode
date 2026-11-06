@@ -1,75 +1,39 @@
 import { NextResponse } from "next/server";
-
-import { generateAssistantReply } from "@/lib/ai";
+import { z } from "zod";
+import { currentUser } from "@/lib/auth";
 import { appendMessage, createSession, getSessionById } from "@/lib/store";
+import { generateAssistantReply, validateModel } from "@/lib/ai";
 import type { ProviderName } from "@/lib/types";
 
-export async function GET() {
-  return NextResponse.json({ ok: true, message: "Chat API ready" });
-}
+export const runtime = "nodejs";
+const inputSchema = z.object({ sessionId: z.string().uuid().optional(), provider: z.enum(["openai", "anthropic"]).default("openai"), model: z.string().min(1).max(100), content: z.string().trim().min(1).max(12000) });
+
+export async function GET() { return NextResponse.json({ ok: true }); }
 
 export async function POST(request: Request) {
+  const user = await currentUser();
+  if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+
   try {
-    const body = (await request.json()) as {
-      sessionId?: string;
-      provider?: ProviderName;
-      model?: string;
-      messages?: Array<{ id?: string; role: "user" | "assistant"; content: string; createdAt?: string }>;
-    };
+    const body = inputSchema.parse(await request.json());
+    const provider = body.provider as ProviderName;
+    validateModel(provider, body.model);
+    let session = body.sessionId ? await getSessionById(user.id, body.sessionId) : null;
+    if (body.sessionId && !session) return NextResponse.json({ error: "Session not found." }, { status: 404 });
+    if (!session) session = await createSession(user.id, { title: body.content.slice(0, 60), provider, model: body.model });
+    if (!session) throw new Error("Unable to create session.");
 
-    const provider = body.provider ?? "openai";
-    const model = body.model ?? process.env.DEFAULT_MODEL ?? "gpt-4o-mini";
-    const submittedMessages = body.messages ?? [];
-
-    if (!submittedMessages.length) {
-      return NextResponse.json({ error: "A prompt is required." }, { status: 400 });
-    }
-
-    const latestMessage = submittedMessages[submittedMessages.length - 1];
-    const content = latestMessage.content?.trim();
-
-    if (!content) {
-      return NextResponse.json({ error: "A prompt is required." }, { status: 400 });
-    }
-
-    let session = body.sessionId ? await getSessionById(body.sessionId) : null;
-    if (!session) {
-      session = await createSession({ title: "New conversation", provider, model });
-    }
-
-    const userMessage = {
-      id: crypto.randomUUID(),
-      role: "user" as const,
-      content,
-      createdAt: new Date().toISOString(),
-    };
-
-    await appendMessage(session.id, userMessage);
-
-    const history = [...(session.messages ?? []), userMessage];
-    const assistantReply = await generateAssistantReply({
-      provider,
-      model,
-      messages: history,
-    });
-
-    const assistantMessage = {
-      id: crypto.randomUUID(),
-      role: "assistant" as const,
-      content: assistantReply,
-      createdAt: new Date().toISOString(),
-    };
-
-    const updatedSession = await appendMessage(session.id, assistantMessage);
-
-    return NextResponse.json({
-      ok: true,
-      sessionId: session.id,
-      message: assistantMessage,
-      session: updatedSession,
-    });
+    const history = session.messages.slice(-30).map((message) => ({ role: message.role, content: message.content }));
+    history.push({ role: "user", content: body.content });
+    await appendMessage(user.id, session.id, { role: "user", content: body.content });
+    const answer = await generateAssistantReply({ provider, model: body.model, messages: history });
+    await appendMessage(user.id, session.id, { role: "assistant", content: answer });
+    const updated = await getSessionById(user.id, session.id);
+    return NextResponse.json({ session: updated, assistant: answer });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown server error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Invalid request. Check the model, provider, and prompt size." }, { status: 400 });
+    const message = error instanceof Error ? error.message : "AI request failed.";
+    const status = message.includes("not enabled") ? 400 : 502;
+    return NextResponse.json({ error: message }, { status });
   }
 }

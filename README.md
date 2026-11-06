@@ -1,64 +1,50 @@
 # Kilo AI Service
 
-A production-style AI backend and web app starter inspired by Kilo's architecture patterns, but built as a separate SaaS service.
+A private, account-based AI chat web application with OpenAI and Anthropic providers. This is a separate application inspired by Kilo's provider architecture; it is not the Kilo Code desktop/IDE agent.
 
-## Features
+## Requirements
 
-- AI chat UI in Next.js
-- OpenAI and Anthropic provider support
-- Session persistence in local JSON storage
-- Ready for deployment on Vercel, Docker, or a Node host
-- Environment-based configuration for API keys and defaults
+- Node.js 20+
+- PostgreSQL 14+
+- An OpenAI or Anthropic API key
 
-## Quick start
+## Local setup
 
-1. Copy `.env.example` to `.env` and set your keys:
+```bash
+cp .env.example .env.local
+# Set DATABASE_URL, AUTH_SECRET (32+ random characters), and at least one provider API key.
+npm install
+npm run db:migrate
+npm run dev
+```
 
-   ```bash
-   cp .env.example .env
-   ```
+Open http://localhost:3000. The first user can register through the UI. API keys stay server-side and must only be configured as deployment secrets/environment variables.
 
-2. Install dependencies:
+## Environment
 
-   ```bash
-   npm install
-   ```
+- `DATABASE_URL` — PostgreSQL connection URL. Use a managed database connection string in production.
+- `AUTH_SECRET` — secret of at least 32 characters for signed, HttpOnly sessions.
+- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` — optional provider secrets; configure at least one.
+- `DATABASE_SSL=disable` — only for local PostgreSQL. SSL is required by default.
+- `DEFAULT_PROVIDER`, `DEFAULT_MODEL`, `NEXT_PUBLIC_APP_NAME` — optional app defaults/label.
 
-3. Start the app:
+## Production deployment checklist
 
-   ```bash
-   npm run dev
-   ```
+1. Configure PostgreSQL backups, connection limits, and apply `db/migrations/001_initial.sql`.
+2. Add secrets through the hosting provider's secret manager; never commit `.env.local`.
+3. Set HTTPS and `NODE_ENV=production`; cookies become Secure in production.
+4. Configure platform-level rate limiting/WAF on `/api/auth/*` and `/api/chat` before public launch. Application-level process memory limits are not distributed and are not a substitute.
+5. Set monitoring/alerts, database backups, provider spend limits, and privacy/retention policy.
+6. Run `npm run typecheck` and `npm run build` in CI before deployment.
 
-4. Open http://localhost:3000
+## API
 
-## Environment variables
+- `POST /api/auth/register` and `POST /api/auth/login` — create/sign in account.
+- `GET /api/auth/me` and `DELETE /api/auth/me` — inspect/sign out.
+- `GET|POST|PATCH|DELETE /api/sessions` — authenticated, owner-scoped sessions.
+- `POST /api/chat` — authenticated AI request, persisted conversation, allowlisted provider/models.
+- `GET /api/health` — database readiness check.
 
-- `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`
-- `DEFAULT_PROVIDER` (default: `openai`)
-- `DEFAULT_MODEL` (default: `gpt-4o-mini`)
+## Limitations
 
-## Service architecture
-
-- `app/page.tsx` - chat UI
-- `app/api/chat/route.ts` - AI request endpoint
-- `app/api/sessions/route.ts` - session CRUD
-- `lib/ai.ts` - provider abstraction
-- `lib/store.ts` - JSON storage for sessions
-
-## Deployment
-
-This project is already structured for a web service deployment. You can deploy to Vercel or run it behind a Node server.
-
-For production, add:
-
-- Postgres or a managed DB
-- authentication and authorization
-- per-user billing and quota limits
-- file/project workspaces for code generation
-- rate limits and audit logs
-
-## Important
-
-This repo is intentionally a service-friendly starter, not a direct fork of the Kilo agent codebase. It uses the same product ideas and provider patterns without depending on the upstream repo internals.
+This MVP provides password-based authentication and persisted private chat history. Before accepting public traffic, add an email verification/password reset flow, durable distributed rate limiting, abuse detection, billing/quotas, structured audit/retention controls, and a production security review. No build or live provider request was executed while generating these repository changes; run the commands above in your deployment environment.

@@ -1,5 +1,3 @@
-export const runtime = "nodejs";
-
 export type ProviderName = "openai" | "anthropic";
 
 export type Message = {

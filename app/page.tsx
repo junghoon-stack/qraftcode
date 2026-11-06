@@ -1,210 +1,85 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
-import type { Message, Session } from "@/lib/types";
-
-const defaultModelByProvider = {
-  openai: "gpt-4o-mini",
-  anthropic: "claude-3-5-sonnet-20241022",
-} as const;
+type Message = { id: string; role: "user" | "assistant"; content: string; createdAt: string };
+type Session = { id: string; title: string; provider: "openai" | "anthropic"; model: string; updatedAt: string; messages: Message[] };
+type User = { id: string; email: string };
+const models = { openai: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"], anthropic: ["claude-3-5-sonnet-20241022", "claude-3-7-sonnet-20250219", "claude-sonnet-4-20250514"] };
 
 export default function HomePage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authMode, setAuthMode] = useState<"login" | "register">("register");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [active, setActive] = useState<Session | null>(null);
   const [provider, setProvider] = useState<"openai" | "anthropic">("openai");
-  const [model, setModel] = useState(defaultModelByProvider.openai);
-  const [input, setInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const activeSession = useMemo(
-    () => sessions.find((session) => session.id === activeSessionId) ?? null,
-    [sessions, activeSessionId],
-  );
+  const [model, setModel] = useState<string>(models.openai[0]);
+  const [prompt, setPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   async function loadSessions() {
     const response = await fetch("/api/sessions");
-    const data = (await response.json()) as { sessions?: Session[] };
-    const nextSessions = data.sessions ?? [];
-    setSessions(nextSessions);
-
-    if (!activeSessionId && nextSessions.length > 0) {
-      setActiveSessionId(nextSessions[0].id);
-    }
+    if (!response.ok) return;
+    const data = await response.json() as { sessions: Session[] };
+    setSessions(data.sessions);
+    if (active) setActive(data.sessions.find((item) => item.id === active.id) ?? null);
   }
 
-  async function loadSession(id: string) {
-    const response = await fetch(`/api/sessions?id=${id}`);
-    const data = (await response.json()) as { session?: Session };
-    if (data.session) {
-      setMessages(data.session.messages);
-      setActiveSessionId(data.session.id);
-    }
-  }
+  useEffect(() => { void fetch("/api/auth/me").then((r) => r.json()).then((data) => { setUser(data.user); if (data.user) void loadSessions(); }).catch(() => {}); }, []);
 
-  useEffect(() => {
-    void loadSessions();
-  }, []);
-
-  useEffect(() => {
-    if (!activeSessionId) {
-      setMessages([]);
-      return;
-    }
-
-    const currentSession = sessions.find((session) => session.id === activeSessionId);
-    if (currentSession) {
-      setMessages(currentSession.messages);
-    }
-  }, [activeSessionId, sessions]);
-
-  const createSession = async () => {
-    const response = await fetch("/api/sessions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider, model }),
-    });
-
-    const data = (await response.json()) as { session?: Session; error?: string };
-    if (!data.session) {
-      throw new Error(data.error ?? "Failed to create session");
-    }
-
-    setActiveSessionId(data.session.id);
-    setMessages(data.session.messages);
-    await loadSessions();
-    return data.session.id;
-  };
-
-  const handleSend = async () => {
-    if (!input.trim()) return;
-    setIsSending(true);
-    setError(null);
-
+  async function submitAuth(event: FormEvent) {
+    event.preventDefault(); setError(""); setBusy(true);
     try {
-      const sessionId = activeSessionId ?? (await createSession());
-      const nextMessages = [...messages, { id: crypto.randomUUID(), role: "user", content: input.trim(), createdAt: new Date().toISOString() }];
-      setMessages(nextMessages);
-      setInput("");
+      const response = await fetch(`/api/auth/${authMode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Authentication failed.");
+      setUser(data.user); await loadSessions();
+    } catch (e) { setError(e instanceof Error ? e.message : "Authentication failed."); }
+    finally { setBusy(false); }
+  }
 
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          provider,
-          model,
-          messages: nextMessages,
-        }),
-      });
+  async function signOut() { await fetch("/api/auth/me", { method: "DELETE" }); setUser(null); setActive(null); setSessions([]); }
 
-      const data = (await response.json()) as { error?: string; message?: Message; sessionId?: string };
-      if (!response.ok || !data.message) {
-        throw new Error(data.error ?? "AI request failed");
-      }
+  async function newChat() {
+    const response = await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, model }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? "Unable to start a chat.");
+    setActive(data.session); await loadSessions();
+  }
 
-      await loadSessions();
-      if (sessionId) {
-        await loadSession(sessionId);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send message");
-    } finally {
-      setIsSending(false);
-    }
-  };
+  async function sendMessage(event: FormEvent) {
+    event.preventDefault();
+    if (!prompt.trim() || busy) return;
+    const content = prompt.trim(); setPrompt(""); setBusy(true); setError("");
+    const optimistic: Message = { id: crypto.randomUUID(), role: "user", content, createdAt: new Date().toISOString() };
+    if (active) setActive({ ...active, messages: [...active.messages, optimistic] });
+    try {
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: active?.id, provider, model, content }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "AI request failed.");
+      setActive(data.session); await loadSessions();
+    } catch (e) { setError(e instanceof Error ? e.message : "AI request failed."); }
+    finally { setBusy(false); }
+  }
 
-  const handleNewSession = async () => {
-    await createSession();
-  };
+  if (!user) return <main className="auth-shell"><form className="auth-card" onSubmit={submitAuth}>
+    <div className="brand-mark">K</div><p className="eyebrow">PRIVATE AI WORKSPACE</p><h1>{authMode === "register" ? "Create your account" : "Welcome back"}</h1>
+    <p className="muted">Your conversations are private to your account.</p>
+    <label>Email<input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+    <label>Password<input type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"} minLength={authMode === "register" ? 12 : 1} required value={password} onChange={(e) => setPassword(e.target.value)} />{authMode === "register" && <small>Use at least 12 characters.</small>}</label>
+    {error && <div className="error-box">{error}</div>}<button className="primary-button full" disabled={busy}>{busy ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button>
+    <button className="text-button" type="button" onClick={() => { setAuthMode(authMode === "register" ? "login" : "register"); setError(""); }}>{authMode === "register" ? "Already have an account? Sign in" : "New here? Create an account"}</button>
+  </form></main>;
 
-  const handleProviderChange = (value: "openai" | "anthropic") => {
-    setProvider(value);
-    setModel(defaultModelByProvider[value]);
-  };
-
-  return (
-    <main className="shell">
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <div>
-            <p className="eyebrow">AI Workspace</p>
-            <h1>Kilo AI Service</h1>
-          </div>
-          <button className="primary-button" onClick={handleNewSession}>New chat</button>
-        </div>
-
-        <div className="provider-row">
-          <label>
-            Provider
-            <select value={provider} onChange={(event) => handleProviderChange(event.target.value as "openai" | "anthropic")}>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-            </select>
-          </label>
-
-          <label>
-            Model
-            <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="gpt-4o-mini" />
-          </label>
-        </div>
-
-        <div className="session-list">
-          {sessions.length === 0 && <p className="empty-state">No sessions yet.</p>}
-          {sessions.map((session) => (
-            <button
-              key={session.id}
-              className={`session-item ${activeSessionId === session.id ? "active" : ""}`}
-              onClick={() => loadSession(session.id)}
-            >
-              <strong>{session.title}</strong>
-              <span>{new Date(session.updatedAt).toLocaleString()}</span>
-            </button>
-          ))}
-        </div>
-      </aside>
-
-      <section className="chat-panel">
-        <div className="chat-header">
-          <div>
-            <p className="eyebrow">Live session</p>
-            <h2>{activeSession ? activeSession.title : "No active session"}</h2>
-          </div>
-          <div className="badge">{provider} / {model}</div>
-        </div>
-
-        <div className="messages">
-          {messages.length === 0 && (
-            <div className="intro-card">
-              <h3>Start a production-ready AI workflow</h3>
-              <p>Use this chat to prompt the LLM, manage sessions, and plug in your own provider secrets.</p>
-            </div>
-          )}
-
-          {messages.map((message) => (
-            <div key={message.id} className={`message ${message.role}`}>
-              <div className="message-role">{message.role === "user" ? "You" : "Assistant"}</div>
-              <p>{message.content}</p>
-            </div>
-          ))}
-        </div>
-
-        {error && <div className="error-box">{error}</div>}
-
-        <div className="composer">
-          <textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            rows={5}
-            placeholder="Ask the AI to build, explain, or debug something..."
-          />
-          <button className="primary-button large" onClick={handleSend} disabled={isSending}>
-            {isSending ? "Processing..." : "Send"}
-          </button>
-        </div>
-      </section>
-    </main>
-  );
+  return <main className="app-shell"><aside className="sidebar"><div className="brand-row"><div className="brand-mark small">K</div><div><strong>Kilo Workspace</strong><small>{user.email}</small></div></div>
+    <button className="primary-button full" onClick={() => void newChat()}>＋ New chat</button><div className="sidebar-label">RECENT CHATS</div>
+    <nav className="session-list">{sessions.map((session) => <button key={session.id} className={`session-item ${active?.id === session.id ? "active" : ""}`} onClick={() => setActive(session)}><strong>{session.title}</strong><small>{new Date(session.updatedAt).toLocaleDateString()}</small></button>)}{sessions.length === 0 && <p className="muted">Your chats will appear here.</p>}</nav>
+    <button className="text-button logout" onClick={() => void signOut()}>Sign out</button>
+  </aside><section className="workspace"><header className="topbar"><div><p className="eyebrow">AI WORKSPACE</p><h2>{active?.title ?? "What can I help you build?"}</h2></div><div className="controls"><select aria-label="AI provider" value={provider} onChange={(e) => { const p = e.target.value as "openai" | "anthropic"; setProvider(p); setModel(models[p][0]); }}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select><select aria-label="Model" value={model} onChange={(e) => setModel(e.target.value)}>{models[provider].map((item) => <option key={item}>{item}</option>)}</select></div></header>
+    <section className="conversation">{!active?.messages.length ? <div className="welcome"><div className="welcome-icon">✳</div><h1>Build something great.</h1><p>Describe a coding task, ask a question, or get help debugging.</p><div className="suggestions"><button onClick={() => setPrompt("Help me plan a secure web application")}>Plan a web application <span>↗</span></button><button onClick={() => setPrompt("Review this code for bugs and security issues")}>Review code for issues <span>↗</span></button><button onClick={() => setPrompt("Explain how to structure a TypeScript project")}>Explain a concept <span>↗</span></button></div></div> : active.messages.map((message) => <article key={message.id} className={`message ${message.role}`}><div className="avatar">{message.role === "user" ? "You" : "K"}</div><div><div className="message-name">{message.role === "user" ? "You" : "Kilo AI"}</div><p>{message.content}</p></div></article>)}</section>
+    {error && <div className="error-box inline-error">{error}</div>}<form className="composer" onSubmit={sendMessage}><textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={12000} rows={3} placeholder="Message Kilo AI…" disabled={busy} /><div className="composer-footer"><span>AI can make mistakes. Review important changes.</span><button className="send-button" disabled={busy || !prompt.trim()}>{busy ? "…" : "↑"}</button></div></form>
+  </section></main>;
 }

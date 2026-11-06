@@ -1,18 +1,20 @@
 {
   "name": "kilo-ai-service",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f db/migrations/001_initial.sql"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.3.5",
     "@ai-sdk/openai": "^1.3.5",
     "ai": "^4.3.16",
     "next": "14.2.15",
+    "postgres": "^3.4.5",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "zod": "^3.23.8"
