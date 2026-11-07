@@ -4,7 +4,7 @@ import { generateText } from "ai";
 import type { CoreMessage } from "ai";
 import type { ProviderName } from "@/lib/types";
 
-// The OpenAI provider speaks the OpenI chat-completions protocol, so it can point at any
+// The OpenAI provider speaks the OpenAI chat-completions protocol, so it can point at any
 // OpenAI-compatible gateway. This deployment runs on Pollinations, whose OpenAI-compatible
 // endpoint lives at https://text.pollinations.ai/openai (no OpenAI account needed).
 // Move to another gateway with OPENAI_BASE_URL; change the selectable models with
@@ -61,7 +61,7 @@ export function validateModel(provider: ProviderName, model: string) {
 export async function generateAssistantReply({ provider, model, messages }: { provider: ProviderName; model: string; messages: CoreMessage[] }) {
   validateModel(provider, model);
   if (provider === "openai") {
-    if (!process.env.OPENAI_API_KEY) throw new Error("The provider is not configured. Set OPENAI_API_KEY on the server.");
+    if (!process.env.OPENAI_API_KEY) throw new Error("The AI provider is not configured. Set OPENAI_API_KEY on the server.");
     const result = await generateText({
       model: createOpenAI({ apiKey: process.env.OPENAI_API_KEY, baseURL: openaiBaseUrl() })(model),
       messages,
