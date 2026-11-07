@@ -8,27 +8,28 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "cli": "node bin/kilo.mjs",
-    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f db/migrations/001_initial.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f db/migrations/002_projects_usage_rate_limits.sql"
+    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f db/migrations/001_initial.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f db/migrations/002_projects_usage_rate_limits.sql",
+    "db:migrate:node": "node scripts/migrate.mjs"
   },
   "bin": {
     "kilo-service": "bin/kilo.mjs"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^1.3.5",
-    "@ai-sdk/openai": "^1.3.5",
-    "ai": "^4.3.16",
+    "@ai-sdk/anthropic": "1.2.12",
+    "@ai-sdk/openai": "1.3.24",
+    "ai": "4.3.19",
     "next": "14.2.15",
-    "postgres": "^3.4.5",
+    "postgres": "3.4.5",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "zod": "^3.23.8"
+    "zod": "3.25.76"
   },
   "devDependencies": {
-    "@types/node": "^20.14.12",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "eslint": "^8.57.0",
+    "@types/node": "20.14.12",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "eslint": "8.57.0",
     "eslint-config-next": "14.2.15",
-    "typescript": "^5.5.4"
+    "typescript": "5.5.4"
   }
 }
