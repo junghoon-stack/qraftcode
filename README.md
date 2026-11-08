@@ -20,6 +20,24 @@ npm run dev
 
 Open http://localhost:3000. The first user can register through the UI. API keys stay server-side and must only be configured as deployment secrets/environment variables.
 
+`npm run typecheck` and `npm run build` do not require a database connection, so they can run in CI before `DATABASE_URL` is configured.
+
+## Docker
+
+```bash
+cp .env.example .env
+# Set AUTH_SECRET (32+ random characters) and at least one provider API key in .env.
+docker compose up --build
+```
+
+The bundled `db` service is a local database without TLS, so `docker-compose.yml` sets `DATABASE_SSL=disable` for the web service. Apply the schema once the containers are up:
+
+```bash
+docker compose exec web npm run db:migrate
+```
+
+Then open http://localhost:3000.
+
 ## Environment
 
 - `DATABASE_URL` — PostgreSQL connection URL. Use a managed database connection string in production.
@@ -47,4 +65,4 @@ Open http://localhost:3000. The first user can register through the UI. API keys
 
 ## Limitations
 
-This MVP provides password-based authentication and persisted private chat history. Before accepting public traffic, add an email verification/password reset flow, durable distributed rate limiting, abuse detection, billing/quotas, structured audit/retention controls, and a production security review. No build or live provider request was executed while generating these repository changes; run the commands above in your deployment environment.
+This MVP provides password-based authentication and persisted private chat history. Before accepting public traffic, add an email verification/password reset flow, durable distributed rate limiting, abuse detection, billing/quotas, structured audit/retention controls, and a production security review. The install, typecheck, and production build paths are verified; live AI responses require configuring `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.

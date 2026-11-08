@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { currentUser } from "@/lib/auth";
 import { database } from "@/lib/db";
 
 const schema = z.object({ scope: z.enum(["chat", "login", "register"]), limit: z.number().int().positive().max(100).default(20), windowSeconds: z.number().int().positive().max(3600).default(60) });

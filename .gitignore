@@ -1,6 +1,7 @@
 # dependencies
 node_modules
 .next
+*.tsbuildinfo
 
 # local data
 .env
